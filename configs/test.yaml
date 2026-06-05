@@ -1,0 +1,16 @@
+exp_name: simplesr test
+
+path:
+  output_dir: D:\codes\SimpleSR\output
+
+train:
+  total_iter: 1e6
+  save_checkpoint_freq: !!float 5e3
+
+# logging settings
+log_settings:
+  print_freq: 100
+
+  wandb:
+    project: new exp
+    resume_id: ~
