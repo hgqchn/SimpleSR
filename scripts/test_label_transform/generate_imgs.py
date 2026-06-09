@@ -1,12 +1,13 @@
 import os
 
 from DOTA_utils.split_dota import convert_labels_for_crop
-from DOTA_utils.utils import parse_dota_label, write_dota_label
-from scripts.DOTA_scripts.generate_transformed_label import (
+from DOTA_utils.label_transform_utils import (
     augment_dota_objects,
     rotate_dota_objects,
     scale_dota_objects,
 )
+from DOTA_utils.utils import parse_dota_label, write_dota_label
+
 from simplesr.utils.img_utils import (
     crop_img_by_shape,
     get_crop_start,
@@ -57,6 +58,8 @@ def write_sample(img, objects, img_path, label_path):
     """写出一组图像和 DOTA 标签。"""
     write_rgb_float_img(img, img_path)
     write_dota_label(label_path, objects)
+    print(f"Saved image: {img_path}")
+    print(f"Saved label: {label_path}")
 
 
 def generate_scaled_sample(img, objects, scale):
@@ -109,8 +112,8 @@ if __name__ == '__main__':
     output_dir = r'./test_data'
     imgs_dir, labels_dir = prepare_output_dirs(output_dir)
 
-    img_path = r"D:\Data\RemoteSensing\DOTAv1_yolo\images\val\P0003.jpg"
-    label_path = r"D:\Data\RemoteSensing\DOTAv1_yolo\labels\val_original\P0003.txt"
+    img_path = r"D:\Data\RemoteSensing\DOTAv1_yolo\images\val\P0004.jpg"
+    label_path = r"D:\Data\RemoteSensing\DOTAv1_yolo\labels\val_original\P0004.txt"
 
     img = read_img_as_rgb_float(img_path)
     img_name, ext = get_filename(img_path, with_ext=True)
@@ -130,6 +133,7 @@ if __name__ == '__main__':
     )
 
     write_scaled_samples(cropped_img, cropped_objects, img_name, ext, imgs_dir, labels_dir)
+
     write_augment_samples(cropped_img, cropped_objects, img_name, ext, imgs_dir, labels_dir)
 
     angles = [i * 45 for i in range(1, int(360 / 45))]

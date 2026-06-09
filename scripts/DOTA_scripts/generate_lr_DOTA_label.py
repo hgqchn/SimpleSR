@@ -3,7 +3,7 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from scripts.DOTA_scripts.generate_transformed_label import scale_dota_label_file
+from DOTA_utils.label_transform_utils import scale_dota_label_file
 
 
 def scale_dota_label_folder(

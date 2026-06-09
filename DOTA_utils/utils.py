@@ -185,5 +185,6 @@ def filter_small_dota_objects(objects: List[Dict], min_box_size=None) -> List[Di
             filtered.append(obj)
     return filtered
 
+
 if __name__ == '__main__':
     pass
