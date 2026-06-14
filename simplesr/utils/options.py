@@ -100,7 +100,7 @@ def parse_options(is_train=True):
         opt['name'] = 'debug_' + opt['name']
 
 
-    # TODO
+
     # datasets
     for phase, dataset in opt['datasets'].items():
         # for multiple datasets, e.g., val_1, val_2; test_1, test_2

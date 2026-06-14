@@ -5,6 +5,8 @@ import numpy as np
 import os
 import torch
 import random
+from pathlib import Path
+from natsort import natsorted
 
 def img_from_bytes(content):
     """Read an image from bytes.
@@ -166,33 +168,45 @@ def img_float32_to_uint8(img: np.ndarray) -> np.ndarray:
     """
     return (img.clip(0, 1) * 255.0).round().astype(np.uint8)
 
-def img_array_to_tensor(images_rgb: Union[np.ndarray, List[np.ndarray]]) -> torch.Tensor:
+def img_array_to_tensor(
+    images_rgb: Union[np.ndarray, List[np.ndarray]],
+    return_batch_tensor: bool = False,
+) -> Union[torch.Tensor, List[torch.Tensor]]:
     """
     功能说明:
-        将单张或多张 RGB numpy 图像转换为 torch batch 张量。
+        将单张或多张 RGB numpy 图像转换为 torch 张量。
 
     输入参数:
         images_rgb (Union[np.ndarray, List[np.ndarray]]):
             1. 单张图像: 形状 (H, W, C)。
-            2. 多张图像: 每个元素形状为 (H, W, C)，且所有图像 shape 必须一致。
+            2. 多张图像: 每个元素形状为 (H, W, C)。
+        return_batch_tensor (bool):
+            是否返回 4 维 batch 张量。默认 False。
 
     输出参数:
-        batch (torch.Tensor):
-            形状 (B, C, H, W)，dtype=float32。
-            当输入为单张图像时，B=1。
+        out (Union[torch.Tensor, List[torch.Tensor]]):
+            1. 输入单张图像且 return_batch_tensor=False 时，返回形状 (C, H, W)。
+            2. 输入单张图像且 return_batch_tensor=True 时，返回形状 (1, C, H, W)。
+            3. 输入图像列表且 return_batch_tensor=False 时，返回 list[Tensor]，
+               每个 tensor 形状为 (C, H, W)。
+            4. 输入图像列表且 return_batch_tensor=True 时，返回形状 (B, C, H, W)。
+            返回 tensor 的 dtype 均为 float32。
     """
     if isinstance(images_rgb, np.ndarray):
-        images_rgb = [images_rgb]
+        tensor = torch.from_numpy(images_rgb).permute(2, 0, 1).float()
+        return tensor.unsqueeze(0) if return_batch_tensor else tensor
 
     if not images_rgb:
         raise ValueError("images_rgb 不能为空")
+
+    tensors = [torch.from_numpy(img).permute(2, 0, 1).float() for img in images_rgb]
+    if not return_batch_tensor:
+        return tensors
 
     shapes = [img.shape for img in images_rgb]
     first_shape = shapes[0]
     if any(shape != first_shape for shape in shapes):
         raise ValueError(f"一个 batch 内所有图像 shape 必须一致，当前 shapes={shapes}")
-
-    tensors = [torch.from_numpy(img).permute(2, 0, 1).float() for img in images_rgb]
     return torch.stack(tensors, dim=0)
 
 
@@ -392,10 +406,14 @@ def paired_random_crop_numpy(img_gt, img_lq, gt_patch_size, scale, gt_path=None)
     h_gt, w_gt = img_gt.shape[0:2]
     lq_patch_size = gt_patch_size // scale
 
+    if h_gt == gt_patch_size and w_gt == gt_patch_size:
+        return img_gt, img_lq
+
     if h_gt != h_lq * scale or w_gt != w_lq * scale:
         raise ValueError(
             f"Scale mismatches. GT ({h_gt}, {w_gt}) is not {scale}x multiplication of LQ ({h_lq}, {w_lq})."
         )
+
     if h_lq < lq_patch_size or w_lq < lq_patch_size:
         msg = (
             f"LQ ({h_lq}, {w_lq}) is smaller than patch size "
@@ -432,6 +450,9 @@ def paired_random_crop_tensor(img_gts, img_lqs, gt_patch_size, scale):
 
     h_lq, w_lq = img_lqs.shape[-2:]
     h_gt, w_gt = img_gts.shape[-2:]
+
+    if h_gt == gt_patch_size and w_gt == gt_patch_size:
+        return img_gts, img_lqs
 
     lq_patch_size = gt_patch_size // scale
     if h_gt != h_lq * scale or w_gt != w_lq * scale:
@@ -612,6 +633,28 @@ def transform_polygons_by_affine(polygons: np.ndarray, matrix: np.ndarray) -> np
         np.ndarray: 形状与输入 ``polygons`` 一致。
     """
     return transform_points_by_affine(polygons, matrix)
+
+
+image_extensions = (".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif")
+
+
+def is_image_file(filename: str) -> bool:
+
+    return filename.lower().endswith(image_extensions)
+
+
+def get_image_paths(imagedir: str | os.PathLike[str]) -> list[str]:
+    """获取目录下（非递归）的图像文件路径并按自然顺序排序。
+    """
+    folder = Path(imagedir)
+    img_list = natsorted(
+        [
+            str(path)
+            for path in folder.iterdir()
+            if path.is_file() and path.suffix.lower() in image_extensions
+        ]
+    )
+    return img_list
 
 
 if __name__ == "__main__":

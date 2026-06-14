@@ -314,7 +314,7 @@ class RealESRGANStyleDegrader:
         scale = int(opt["scale"])
 
         # 转成 tensor: 1, C, H, W
-        gt = img_array_to_tensor(img_rgb).to(self.device)
+        gt = img_array_to_tensor(img_rgb, return_batch_tensor=True).to(self.device)
         ori_h, ori_w = gt.shape[2:4]
 
         # 为了保证最终尺寸整除 scale，这里建议输入 patch 尺寸本身可被 scale 整除
@@ -804,7 +804,7 @@ def degrade_folder_gpu(
     for start in tqdm(range(0, len(image_paths), batch_size), desc="Degrading images (GPU batch)"):
         batch_paths = image_paths[start:start + batch_size]
         imgs_rgb = [read_img_as_rgb_float(str(path)) for path in batch_paths]
-        gt_batch = img_array_to_tensor(imgs_rgb).to(device, non_blocking=True)
+        gt_batch = img_array_to_tensor(imgs_rgb, return_batch_tensor=True).to(device, non_blocking=True)
         lq_batch = degrader.degrade_batch_tensor(gt_batch)
         lq_imgs = tensor_to_img_array(lq_batch)
 
@@ -831,16 +831,16 @@ if __name__ == "__main__":
 
     # 示例 2：文件夹退化，单进程，可用 GPU
     degrade_folder(
-        input_dir=r"D:\codes\My_SR_new\DOTA_crop_dataset\dota_samples\train\images",
-        output_dir=r"D:\codes\My_SR_new\DOTA_crop_dataset\dota_samples\train_lrx4\images",
+        input_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train\images",
+        output_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train_lrx4\images",
         scale=4,
         device="cuda",
         recursive=True,
     )
 
     degrade_folder(
-        input_dir=r"D:\codes\My_SR_new\DOTA_crop_dataset\dota_samples\val\images",
-        output_dir=r"D:\codes\My_SR_new\DOTA_crop_dataset\dota_samples\val_lrx4\images",
+        input_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val\images",
+        output_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_lrx4\images",
         scale=4,
         device="cuda",
         recursive=True,
