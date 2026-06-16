@@ -33,6 +33,8 @@ def get_current_time():
 
     return dt.datetime.now().strftime(format)
 
+
+
 def mkdir_and_rename(path):
     """mkdirs. If path exists, rename it with timestamp and create a new one.
 

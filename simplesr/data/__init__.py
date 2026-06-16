@@ -59,8 +59,8 @@ def build_dataloader(dataset, dataset_opt, num_gpu=1, dist=False, sampler=None, 
             batch_size_per_gpu (int): 训练阶段每张 GPU 的 batch size。
             num_worker_per_gpu (int): 训练阶段每张 GPU 的 DataLoader worker 数。
             batch_size (int): 验证/测试阶段 batch size。默认 1。
-            num_workers (int): 验证/测试阶段 DataLoader worker 数。默认 0。
-            pin_memory (bool): 是否启用 DataLoader pin_memory。默认 False。
+            num_worker (int): 验证/测试阶段 DataLoader worker 数。默认 0。
+            pin_memory (bool): 是否启用 DataLoader pin_memory。默认 True。
             persistent_workers (bool): 是否跨 epoch 保留 worker 进程。默认 False。
             prefetch_mode (str | None): 预取模式，可为 None、'cpu' 或 'cuda'。
             num_prefetch_queue (int): CPU 预取队列长度，仅 `prefetch_mode='cpu'` 时使用。
@@ -83,6 +83,7 @@ def build_dataloader(dataset, dataset_opt, num_gpu=1, dist=False, sampler=None, 
             multiplier = 1 if num_gpu == 0 else num_gpu
             batch_size = dataset_opt['batch_size_per_gpu'] * multiplier
             num_workers = dataset_opt['num_worker_per_gpu'] * multiplier
+
         dataloader_args = dict(
             dataset=dataset,
             batch_size=batch_size,
@@ -97,12 +98,12 @@ def build_dataloader(dataset, dataset_opt, num_gpu=1, dist=False, sampler=None, 
             worker_init_fn, num_workers=num_workers, rank=rank, seed=seed) if seed is not None else None
     elif phase in ['val', 'test']:  # validation / testing
         batch_size = dataset_opt.get('batch_size', 1)
-        num_workers = dataset_opt.get('num_workers',0)
+        num_workers = dataset_opt.get('num_worker',0)
         dataloader_args = dict(dataset=dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,)
     else:
         raise ValueError(f"Wrong dataset phase: {phase}. Supported ones are 'train', 'val' and 'test'.")
 
-    dataloader_args['pin_memory'] = dataset_opt.get('pin_memory', False)
+    dataloader_args['pin_memory'] = dataset_opt.get('pin_memory', True)
     dataloader_args['persistent_workers'] = dataset_opt.get('persistent_workers', False)
 
     prefetch_mode = dataset_opt.get('prefetch_mode')

@@ -40,7 +40,7 @@ class PairedImageDataset(data.Dataset):
         phase,
         scale,
         io_backend_opt=None,
-        lq_filename_tmpl='{}',
+        lq_filename_tmpl='{}', #lq_filename_template
         gt_size=None,
         use_augment=False,
         color=None,

@@ -23,7 +23,10 @@ class EnlargedSampler(Sampler):
         self.num_replicas = num_replicas
         self.rank = rank
         self.epoch = 0
+        # 当前进程采样的样本数量，使用ceil确保样本都被采样到
+        # ratio 数据集的扩大倍数
         self.num_samples = math.ceil(len(self.dataset) * ratio / self.num_replicas)
+        # 所有进程采样的总样本数量
         self.total_size = self.num_samples * self.num_replicas
 
     def __iter__(self):
@@ -33,9 +36,11 @@ class EnlargedSampler(Sampler):
         indices = torch.randperm(self.total_size, generator=g).tolist()
 
         dataset_size = len(self.dataset)
+        # 数据集的真实索引
         indices = [v % dataset_size for v in indices]
 
         # subsample
+        # 每个进程的采样索引
         indices = indices[self.rank:self.total_size:self.num_replicas]
         assert len(indices) == self.num_samples
 

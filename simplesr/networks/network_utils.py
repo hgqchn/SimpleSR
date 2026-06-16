@@ -1,0 +1,274 @@
+import collections.abc
+import math
+import torch
+import torchvision
+import warnings
+
+from itertools import repeat
+from torch import nn as nn
+from torch.nn import functional as F
+from torch.nn import init as init
+from torch.nn.modules.batchnorm import _BatchNorm
+from torch.nn.modules.utils import _pair, _single
+
+
+@torch.no_grad()
+def default_init_weights(module_list, scale=1, bias_fill=0, **kwargs):
+    """Initialize network weights.
+        Kaiming Normal初始化
+    Args:
+        module_list (list[nn.Module] | nn.Module): Modules to be initialized.
+        scale (float): Scale initialized weights, especially for residual
+            blocks. Default: 1.
+        bias_fill (float): The value to fill bias. Default: 0
+        kwargs (dict): Other arguments for initialization function.
+    """
+    if not isinstance(module_list, list):
+        module_list = [module_list]
+    for module in module_list:
+        for m in module.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, **kwargs)
+                m.weight.data *= scale
+                if m.bias is not None:
+                    m.bias.data.fill_(bias_fill)
+            elif isinstance(m, nn.Linear):
+                init.kaiming_normal_(m.weight, **kwargs)
+                m.weight.data *= scale
+                if m.bias is not None:
+                    m.bias.data.fill_(bias_fill)
+            elif isinstance(m, _BatchNorm):
+                init.constant_(m.weight, 1)
+                if m.bias is not None:
+                    m.bias.data.fill_(bias_fill)
+
+
+def make_layer(basic_block, num_basic_block, **kwarg):
+    """Make layers by stacking the same blocks.
+
+    Args:
+        basic_block (nn.module): nn.module class for basic block.
+        num_basic_block (int): number of blocks.
+
+    Returns:
+        nn.Sequential: Stacked blocks in nn.Sequential.
+    """
+    layers = []
+    for _ in range(num_basic_block):
+        layers.append(basic_block(**kwarg))
+    return nn.Sequential(*layers)
+
+
+class ResidualBlockNoBN(nn.Module):
+    """Residual block without BN.
+
+    Args:
+        num_feat (int): Channel number of intermediate features.
+            Default: 64.
+        res_scale (float): Residual scale. Default: 1.
+        pytorch_init (bool): If set to True, use pytorch default init,
+            otherwise, use default_init_weights. Default: False.
+    """
+
+    def __init__(self, num_feat=64, res_scale=1, pytorch_init=False):
+        super(ResidualBlockNoBN, self).__init__()
+        self.res_scale = res_scale
+        self.conv1 = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
+        self.conv2 = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=True)
+        self.relu = nn.ReLU(inplace=True)
+
+        if not pytorch_init:
+            default_init_weights([self.conv1, self.conv2], 0.1)
+
+    def forward(self, x):
+        identity = x
+        out = self.conv2(self.relu(self.conv1(x)))
+        return identity + out * self.res_scale
+
+
+class Upsample(nn.Sequential):
+    """Upsample module.
+        Conv2d+PixelShuffle
+    Args:
+        scale (int): Scale factor. Supported scales: 2^n and 3.
+        num_feat (int): Channel number of intermediate features.
+    """
+
+    def __init__(self, scale, num_feat):
+        m = []
+        if (scale & (scale - 1)) == 0:  # scale = 2^n
+            for _ in range(int(math.log(scale, 2))):
+                m.append(nn.Conv2d(num_feat, 4 * num_feat, 3, 1, 1))
+                m.append(nn.PixelShuffle(2))
+        elif scale == 3:
+            m.append(nn.Conv2d(num_feat, 9 * num_feat, 3, 1, 1))
+            m.append(nn.PixelShuffle(3))
+        else:
+            raise ValueError(f'scale {scale} is not supported. Supported scales: 2^n and 3.')
+        super(Upsample, self).__init__(*m)
+
+
+def pixel_unshuffle(x, scale):
+
+    return  F.pixel_unshuffle(x, downscale_factor=scale)
+
+
+class ModulatedDeformConvPack(nn.Module):
+    """A ModulatedDeformable Conv Encapsulation that acts as normal Conv layers.
+
+    Args:
+        in_channels (int): Same as nn.Conv2d.
+        out_channels (int): Same as nn.Conv2d.
+        kernel_size (int or tuple[int]): Same as nn.Conv2d.
+        stride (int or tuple[int]): Same as nn.Conv2d.
+        padding (int or tuple[int]): Same as nn.Conv2d.
+        dilation (int or tuple[int]): Same as nn.Conv2d.
+        groups (int): Same as nn.Conv2d.
+        bias (bool or str): If specified as `auto`, it will be decided by the
+            norm_cfg. Bias will be set as True if norm_cfg is None, otherwise
+            False.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 groups=1,
+                 deformable_groups=1,
+                 bias=True):
+        super(ModulatedDeformConvPack,self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = _pair(kernel_size)
+        self.stride = _pair(stride)
+        self.padding = _pair(padding)
+        self.dilation = _pair(dilation)
+        self.groups = groups
+        self.deformable_groups = deformable_groups
+        self.with_bias = bias
+        # enable compatibility with nn.Conv2d
+        self.transposed = False
+        self.output_padding = _single(0)
+
+        self.weight = nn.Parameter(torch.Tensor(out_channels, in_channels // groups, *self.kernel_size))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(out_channels))
+        else:
+            self.register_parameter('bias', None)
+
+        self.conv_offset = nn.Conv2d(
+            self.in_channels,
+            self.deformable_groups * 3 * self.kernel_size[0] * self.kernel_size[1],
+            kernel_size=self.kernel_size,
+            stride=_pair(self.stride),
+            padding=_pair(self.padding),
+            dilation=_pair(self.dilation),
+            bias=True)
+
+        self.init_weights()
+
+    def init_weights(self):
+        n = self.in_channels// self.groups
+        for k in self.kernel_size:
+            n *= k
+        stdv = 1. / math.sqrt(n)
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.zero_()
+        if hasattr(self, 'conv_offset'):
+            self.conv_offset.weight.data.zero_()
+            self.conv_offset.bias.data.zero_()
+
+    def forward(self, x):
+        out = self.conv_offset(x)
+        o1, o2, mask = torch.chunk(out, 3, dim=1)
+        offset = torch.cat((o1, o2), dim=1)
+        mask = torch.sigmoid(mask)
+
+
+        return torchvision.ops.deform_conv2d(x, offset, self.weight, self.bias, self.stride, self.padding,self.dilation, mask)
+
+
+
+def _no_grad_trunc_normal_(tensor, mean, std, a, b):
+    # From: https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers/weight_init.py
+    # Cut & paste from PyTorch official master until it's in a few official releases - RW
+    # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
+    def norm_cdf(x):
+        # Computes standard normal cumulative distribution function
+        return (1. + math.erf(x / math.sqrt(2.))) / 2.
+
+    if (mean < a - 2 * std) or (mean > b + 2 * std):
+        warnings.warn(
+            'mean is more than 2 std from [a, b] in nn.init.trunc_normal_. '
+            'The distribution of values may be incorrect.',
+            stacklevel=2)
+
+    with torch.no_grad():
+        # Values are generated by using a truncated uniform distribution and
+        # then using the inverse CDF for the normal distribution.
+        # Get upper and lower cdf values
+        low = norm_cdf((a - mean) / std)
+        up = norm_cdf((b - mean) / std)
+
+        # Uniformly fill tensor with values from [low, up], then translate to
+        # [2l-1, 2u-1].
+        tensor.uniform_(2 * low - 1, 2 * up - 1)
+
+        # Use inverse cdf transform for normal distribution to get truncated
+        # standard normal
+        tensor.erfinv_()
+
+        # Transform to proper mean, std
+        tensor.mul_(std * math.sqrt(2.))
+        tensor.add_(mean)
+
+        # Clamp to ensure it's in the proper range
+        tensor.clamp_(min=a, max=b)
+        return tensor
+
+
+def trunc_normal_(tensor, mean=0., std=1., a=-2., b=2.):
+    r"""Fills the input Tensor with values drawn from a truncated
+    normal distribution.
+
+    From: https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers/weight_init.py
+
+    The values are effectively drawn from the
+    normal distribution :math:`\mathcal{N}(\text{mean}, \text{std}^2)`
+    with values outside :math:`[a, b]` redrawn until they are within
+    the bounds. The method used for generating the random values works
+    best when :math:`a \leq \text{mean} \leq b`.
+
+    Args:
+        tensor: an n-dimensional `torch.Tensor`
+        mean: the mean of the normal distribution
+        std: the standard deviation of the normal distribution
+        a: the minimum cutoff value
+        b: the maximum cutoff value
+
+    Examples:
+        >>> w = torch.empty(3, 5)
+        >>> nn.init.trunc_normal_(w)
+    """
+    return _no_grad_trunc_normal_(tensor, mean, std, a, b)
+
+
+# From PyTorch
+def _ntuple(n):
+
+    def parse(x):
+        if isinstance(x, collections.abc.Iterable):
+            return x
+        return tuple(repeat(x, n))
+
+    return parse
+
+
+to_1tuple = _ntuple(1)
+to_2tuple = _ntuple(2)
+to_3tuple = _ntuple(3)
+to_4tuple = _ntuple(4)
+to_ntuple = _ntuple

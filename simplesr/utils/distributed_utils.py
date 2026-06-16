@@ -62,15 +62,14 @@ def init_distributed_mode(cfg):
         cfg["world_size"] = int(os.environ["WORLD_SIZE"])
         cfg["local_rank"] = int(os.environ.get("LOCAL_RANK", 0))
         cfg["gpu"] = cfg["local_rank"]
-        cfg["distributed"] = cfg["world_size"] > 1
     else:
         print("未使用分布式模式")
         cfg["rank"] = 0
         cfg["world_size"] = 1
         cfg["local_rank"] = 0
         cfg["gpu"] = 0
-        cfg["distributed"] = False
 
+    cfg["distributed"] = cfg["world_size"] > 1
     if not cfg["distributed"]:
         print('分布式未初始化，仅使用单进程')
         return

@@ -1,14 +1,16 @@
-import datetime
-import logging
-import math
-import time
-import torch
+import sys
 import os
+import torch
+import logging
+import time
+import datetime
 from os import path as osp
+
+from train import create_train_val_dataloader,make_dirs
 
 from simplesr.data import build_dataloader, build_dataset
 from simplesr.data.data_sampler import EnlargedSampler
-from simplesr.data.prefetch_dataloader import CPUPrefetcher, CUDAPrefetcher
+#from simplesr.data.prefetch_dataloader import CPUPrefetcher, CUDAPrefetcher
 from simplesr.models import build_model
 
 from simplesr.utils.options import parse_args,parse_options,opt_dict_to_str,save_yaml
@@ -16,66 +18,14 @@ from simplesr.utils.log_utils import AvgTimer,TrainMessageLogger,get_root_logger
 from simplesr.utils.distributed_utils import is_main_process,get_world_size,get_rank,master_only
 from simplesr.utils.misc import get_current_time
 
-@master_only
-def make_dirs(opt):
-    path_opt=opt['path']
-    os.makedirs(path_opt['experiments_root'], exist_ok=True)
-    os.makedirs(path_opt['weights'], exist_ok=True)
-    os.makedirs(path_opt['checkpoints'], exist_ok=True)
-    #os.makedirs(path_opt['visualization'], exist_ok=True)
+if __name__ == '__main__':
 
+    args_list=[
+        '-opt',r"D:\codes\SimpleSR\configs\test.yaml",
+        '--debug',
+    ]
 
-def create_train_val_dataloader(opt, logger):
-    # create train and val dataloaders
-    train_loader, val_loaders = None, []
-    train_sampler = None
-    total_epochs = 0
-    total_iters = 0
-    for phase, dataset_opt in opt['datasets'].items():
-        if phase == 'train':
-            dataset_enlarge_ratio = dataset_opt.get('dataset_enlarge_ratio', 1)
-            train_set = build_dataset(dataset_opt)
-
-            train_sampler = EnlargedSampler(train_set, opt['world_size'], opt['rank'], dataset_enlarge_ratio)
-
-            train_loader = build_dataloader(
-                train_set,
-                dataset_opt,
-                num_gpu=opt['world_size'],
-                dist=opt['distributed'],
-                sampler=train_sampler,
-                seed=opt['manual_seed'])
-
-            # 每个epoch的迭代次数，总样本数/全局batchsize
-            num_iter_per_epoch = math.ceil(
-                len(train_set) * dataset_enlarge_ratio / (dataset_opt['batch_size_per_gpu'] * opt['world_size']))
-            total_iters = int(opt['train']['total_iter'])
-            total_epochs = math.ceil(total_iters / (num_iter_per_epoch))
-            logger.info('Training statistics:'
-                        f'\n\tNumber of train images: {len(train_set)}'
-                        f'\n\tDataset enlarge ratio: {dataset_enlarge_ratio}'
-                        f'\n\tBatch size per gpu: {dataset_opt["batch_size_per_gpu"]}'
-                        f'\n\tWorld size (gpu number): {opt["world_size"]}'
-                        f'\n\tRequire iter number per epoch: {num_iter_per_epoch}'
-                        f'\n\tTotal epochs: {total_epochs}; iters: {total_iters}.')
-        elif phase.split('_')[0] == 'val':
-            val_set = build_dataset(dataset_opt)
-            val_loader = build_dataloader(
-                val_set, dataset_opt, num_gpu=opt['world_size'], dist=opt['dist'], sampler=None, seed=opt['manual_seed'])
-            logger.info(f'Number of val images/folders in {dataset_opt["name"]}: {len(val_set)}')
-            val_loaders.append(val_loader)
-        else:
-            raise ValueError(f'Dataset phase {phase} is not recognized.')
-
-    return train_loader, train_sampler, val_loaders, total_epochs, total_iters
-
-def load_checkpoint(cpt_path):
-    pass
-
-
-def train_pipeline():
-
-    opt,args=parse_args()
+    opt,args=parse_args(args_list)
     debug=args.debug
     if debug:
         print("="*10+"调试模式"+"="*10)
@@ -109,7 +59,6 @@ def train_pipeline():
     # initialize wandb loggers
     wanbdb_logger=None
     wandb_opt=opt["log_settings"].get("wandb")
-    # TODO
     exp_opt={
         "exp_name": exp_name,
         "dataset_name": opt['datasets']['train'].get('name'),
@@ -201,8 +150,4 @@ def train_pipeline():
         for val_loader in val_loaders:
             model.validation(val_loader, current_iter, , opt['val']['save_img'])
 
-
-if __name__ == '__main__':
-    root_path = osp.abspath(osp.join(__file__, osp.pardir, osp.pardir))
-    train_pipeline(root_path)
-
+    pass

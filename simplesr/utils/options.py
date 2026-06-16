@@ -62,7 +62,7 @@ def overwrite_options(opt,dotlist):
     opt_dict=OmegaConf.to_container(opt_new,resolve=True)
     return opt_dict
 
-def parse_options(is_train=True):
+def parse_args(cmd_args=None):
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-opt', type=str, required=True, help='Path to option YAML file.')
@@ -72,18 +72,30 @@ def parse_options(is_train=True):
     parser.add_argument("--add-time", action=argparse.BooleanOptionalAction, default=True)
 
     # 关键：用 parse_known_args，把 dotlist 覆盖项留给 OmegaConf
-    args, unknown = parser.parse_known_args()
-
+    args, unknown = parser.parse_known_args(cmd_args)
     # parse yml to dict
     opt=overwrite_options(args.opt,unknown)
 
+    # debug setting
+    if args.debug and not opt['exp_name'].startswith('debug'):
+        opt['exp_name'] = 'debug_' + opt['exp_name']
+
+    return opt,args
+
+def parse_options(opt,is_train=True):
+
     # distributed settings
+    #             - rank: 全局rank
+    #             - world_size: 总进程数
+    #             - local_rank: 本地rank（GPU ID）
+    #             - distributed: 是否启用分布式
+    #             - gpu: 当前GPU设备ID
     init_distributed_mode(opt)
 
     # random seed
     seed = opt.get('manual_seed')
     if seed is None:
-        if opt['dist']:
+        if opt['distributed']:
             raise ValueError(
                 'In distributed training, "manual_seed" must be specified in the YAML config.'
             )
@@ -94,12 +106,6 @@ def parse_options(is_train=True):
 
     # 当前模式，影响后续模型的处理
     opt['is_train'] = is_train
-
-    # debug setting
-    if args.debug and not opt['name'].startswith('debug'):
-        opt['name'] = 'debug_' + opt['name']
-
-
 
     # datasets
     for phase, dataset in opt['datasets'].items():
@@ -117,6 +123,7 @@ def parse_options(is_train=True):
     output_dir = opt['output_dir']
     current_time=get_current_time()
 
+    opt['path']={}
     # resume
     resume_ckpt=opt["path"].get("resume_ckpt")
 
@@ -125,7 +132,9 @@ def parse_options(is_train=True):
         if resume_ckpt:
             # 真正 resume：默认使用 checkpoint 所在实验目录
             experiments_root = infer_experiment_root_from_checkpoint(resume_ckpt)
+            opt['is_resume_train']=True
         else:
+            # 创建新的实验目录
             experiments_root = opt['path'].get('experiments_root')
             if experiments_root is None:
                 experiments_root = osp.join(output_dir, opt['exp_name'],f'train_{current_time}')
@@ -136,26 +145,22 @@ def parse_options(is_train=True):
         opt['path']['checkpoints'] = osp.join(experiments_root, 'checkpoints')
         #opt['path']['visualization'] = osp.join(experiments_root, 'visualization')
 
-
-
         # change some options for debug mode
-        if 'debug' in opt['name']:
+        if 'debug' in opt['exp_name']:
             if 'val' in opt:
                 opt['val']['val_freq'] = 10
-            opt['logger']['print_freq'] = 1
-            opt['logger']['save_checkpoint_freq'] = 10
+            opt['log_settings']['print_freq'] = 1
+            opt['log_settings']['save_checkpoint_freq'] = 10
             opt['train']['total_iter']=15
     else:  # test
-        results_root = opt['path']['results_root']
+        results_root = opt['path'].get('results_root')
         if results_root is None:
             results_root = osp.join(output_dir, opt['exp_name'],f'test_{current_time}')
 
         opt['path']['results_root'] = results_root
         opt['path']['visualization'] = osp.join(results_root, 'visualization')
 
-        # log file path
-        opt['path']['log_file'] = osp.join(results_root, 'log.txt')
-    return opt, args
+    return opt
 
 def infer_experiment_root_from_checkpoint(checkpoint):
 
@@ -170,3 +175,9 @@ def infer_experiment_root_from_checkpoint(checkpoint):
         "Cannot infer experiment root from checkpoint path. "
         "Expected checkpoint path like: <exp_root>/checkpoints/checkpoint_xxx.pth"
     )
+
+@master_only
+def make_exp_dirs(opt):
+    path_opt=opt['path'].copy()
+    for key, path in path_opt.items():
+            os.makedirs(path, exist_ok=True)

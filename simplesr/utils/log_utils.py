@@ -2,6 +2,7 @@ import datetime as dt
 import logging
 import time
 import os
+import sys
 import csv
 from typing import Any
 
@@ -28,12 +29,12 @@ class AvgTimer():
 
     def start(self):
         """开始或重置计时起点。"""
-        self.start_time = self.tic = time.time()
+        self.start_time = self.tic = time.perf_counter()
 
     def record(self):
         """记录一次迭代耗时并更新平均值。"""
         self.count += 1
-        self.toc = time.time()
+        self.toc = time.perf_counter()
         self.current_time = self.toc - self.tic
         self.total_time += self.current_time
         # calculate average time
@@ -44,7 +45,7 @@ class AvgTimer():
             self.count = 0
             self.total_time = 0
 
-        self.tic = time.time()
+        self.tic = time.perf_counter()
 
     def get_current_time(self):
         """获取最近一次记录的耗时（秒）。"""
@@ -84,13 +85,13 @@ class TrainMessageLogger():
 
         self.max_iters = opt['train']['total_iter']
         self.wandb_logger = wandb_logger
-        self.start_time = time.time()
+        self.start_time = time.perf_counter()
         self.start_iter=start_iter
         self.logger=logger if logger else get_root_logger()
 
     def reset_start_time(self):
         """重置日志统计起点。"""
-        self.start_time = time.time()
+        self.start_time = time.perf_counter()
 
     @master_only
     def __call__(self, log_dict):
@@ -124,7 +125,7 @@ class TrainMessageLogger():
             iter_time = log_dict.get('time')
             data_time = log_dict.get('data_time')
 
-            total_time = time.time() - self.start_time
+            total_time = time.perf_counter() - self.start_time
             # 每次迭代平均用时
             time_sec_avg = total_time / (current_iter - self.start_iter + 1)
             # 估计剩余时间
@@ -165,7 +166,7 @@ def init_wandb_logger(
             - `mode` (str): wandb 模式，如 `online`、`offline`、`disabled`，默认 `online`。
             - `tags` (list[str] | tuple[str] | None): run 标签列表，默认 `None`。
         exp_opt (dict):
-            训练/实验的完整配置，会作为 `config` 传给 wandb。
+            训练/实验的配置，会作为 `config` 传给 wandb。
         save_dir (str):
             wandb 本地保存目录，会传给 `wandb.init(..., dir=save_dir)`。
 
@@ -243,7 +244,7 @@ def get_root_logger(logger_name='basic_logger', log_level=logging.INFO, log_file
     format_str = "[%(asctime)s][%(name)s][%(levelname)s] - %(message)s"
     #format_str = "[%(asctime)s][%(name)s][%(filename)s][%(levelname)s] - %(message)s"
 
-    stream_handler = logging.StreamHandler()
+    stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(logging.Formatter(format_str))
     logger.addHandler(stream_handler)
     logger.propagate = False
@@ -251,7 +252,10 @@ def get_root_logger(logger_name='basic_logger', log_level=logging.INFO, log_file
     rank=get_rank()
     if rank != 0:
         logger.setLevel('ERROR')
-    elif log_file_path is not None:
+    else:
+        logger.setLevel(log_level)
+    # file
+    if log_file_path is not None:
         logger.setLevel(log_level)
         # add file handler
         file_handler = logging.FileHandler(log_file_path, 'a')

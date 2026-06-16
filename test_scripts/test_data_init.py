@@ -34,6 +34,7 @@ if __name__ == '__main__':
         "pin_memory": True,
         "persistent_workers": False,
         "prefetch_mode": None,
+        "num_prefetch_queue": 2,
     }
 
     dataloader = build_dataloader(
