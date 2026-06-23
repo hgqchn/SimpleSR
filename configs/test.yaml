@@ -11,9 +11,9 @@ model:
 
 datasets:
   train:
-    name: test_DOTA
     path: simplesr.data.dataset.PairedImageDataset
     kwargs:
+      name: test_DOTA
       dataroot_gt: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train\images
       dataroot_lq: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train_lrx4\images
       phase: train
@@ -30,9 +30,9 @@ datasets:
     num_prefetch_queue: 1
 
   val:
-    name: test_DOTA_val
     path: simplesr.data.dataset.PairedImageDataset
     kwargs:
+      name: test_DOTA_val
       dataroot_gt: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val\images
       dataroot_lq: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_lrx4\images
       phase: val

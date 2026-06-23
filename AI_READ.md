@@ -1,0 +1,1 @@
+python 路径：C:/ProgramData/anaconda3/envs/SR_new/python.exe

@@ -269,26 +269,35 @@ if __name__ == '__main__':
     dota_train_label=r'D:\Data\RemoteSensing\DOTA_crop\train_crop_256\labelTxt'
     dota_val=r'D:\Data\RemoteSensing\DOTA_crop\val_crop_256\images'
     dota_val_label=r'D:\Data\RemoteSensing\DOTA_crop\val_crop_256\labelTxt'
+    #
+    # output_dir_train=r'../DOTA_crop_dataset/dota_samples/train'
+    # output_dir_val=r'../DOTA_crop_dataset/dota_samples/val'
+    #
+    # make_dota_dataset(
+    #     image_dir=dota_train,
+    #     label_dir=dota_train_label,
+    #     output_root=output_dir_train,
+    #     num_samples=400,
+    #     seed=0,
+    #     manifest_name="selected_samples_train.csv",
+    # )
+    #
+    # make_dota_dataset(
+    #     image_dir=dota_val,
+    #     label_dir=dota_val_label,
+    #     output_root=output_dir_val,
+    #     num_samples=100,
+    #     seed=0,
+    #     manifest_name="selected_samples_val.csv",
+    # )
 
-    output_dir_train=r'../DOTA_crop_dataset/dota_samples/train'
-    output_dir_val=r'../DOTA_crop_dataset/dota_samples/val'
-
-    make_dota_dataset(
-        image_dir=dota_train,
-        label_dir=dota_train_label,
-        output_root=output_dir_train,
-        num_samples=400,
-        seed=0,
-        manifest_name="selected_samples_train.csv",
-    )
+    output_dir_val=r'../dataset/DOTA_crop_dataset/dota_samples/val_mini'
 
     make_dota_dataset(
         image_dir=dota_val,
         label_dir=dota_val_label,
         output_root=output_dir_val,
-        num_samples=100,
+        num_samples=10,
         seed=0,
         manifest_name="selected_samples_val.csv",
     )
-
-

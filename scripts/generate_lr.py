@@ -830,17 +830,17 @@ if __name__ == "__main__":
     # )
 
     # 示例 2：文件夹退化，单进程，可用 GPU
-    degrade_folder(
-        input_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train\images",
-        output_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train_lrx4\images",
-        scale=4,
-        device="cuda",
-        recursive=True,
-    )
+    # degrade_folder(
+    #     input_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train\images",
+    #     output_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train_lrx4\images",
+    #     scale=4,
+    #     device="cuda",
+    #     recursive=True,
+    # )
 
     degrade_folder(
-        input_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val\images",
-        output_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_lrx4\images",
+        input_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_mini\images",
+        output_dir=r"D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_mini_lrx4\images",
         scale=4,
         device="cuda",
         recursive=True,

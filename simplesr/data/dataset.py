@@ -39,6 +39,7 @@ class PairedImageDataset(data.Dataset):
         dataroot_lq,
         phase,
         scale,
+        name='',
         io_backend_opt=None,
         lq_filename_tmpl='{}', #lq_filename_template
         gt_size=None,
@@ -48,6 +49,7 @@ class PairedImageDataset(data.Dataset):
         std=None,
     ):
         super(PairedImageDataset, self).__init__()
+        self.name = name
         self.dataroot_gt = dataroot_gt
         self.dataroot_lq = dataroot_lq
         self.io_backend_opt = io_backend_opt.copy()

@@ -204,7 +204,7 @@ class SRModel(BaseModel):
         return None
 
     def nondist_validation(self, dataloader, current_iter, wandb_logger, save_img):
-        dataset_name = dataloader.dataset.opt['name']
+        dataset_name = dataloader.dataset.name
         assert self.opt['val'].get('metrics') is not None
         with_metrics=True
         use_pbar = self.opt['val'].get('pbar', False)

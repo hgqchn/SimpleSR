@@ -26,7 +26,7 @@ def build_dataset(dataset_opt):
     """
     dataset = instantiate_from_config(dataset_opt)
     logger = get_root_logger()
-    dataset_name= dataset_opt.get('name', '')
+    dataset_name = dataset.name
     logger.info(f'Dataset [{dataset.__class__.__name__}] - {dataset_name} is built.')
     return dataset
 

@@ -20,9 +20,9 @@ model:
 
 datasets:
   train:
-    name: train_set
     path: simplesr.data.dataset.PairedImageDataset
     kwargs:
+      name: train_set
       dataroot_gt: D:\path\to\train\HR
       dataroot_lq: D:\path\to\train\LR_x4
       phase: train
@@ -40,9 +40,9 @@ datasets:
     persistent_workers: false
 
   val:
-    name: val_set
     path: simplesr.data.dataset.PairedImageDataset
     kwargs:
+      name: val_set
       dataroot_gt: D:\path\to\val\HR
       dataroot_lq: D:\path\to\val\LR_x4
       phase: val
