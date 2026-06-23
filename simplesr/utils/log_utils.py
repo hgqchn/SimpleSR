@@ -5,6 +5,7 @@ import os
 import sys
 import csv
 from typing import Any
+from pathlib import Path
 
 from .distributed_utils import get_rank, master_only,is_main_process
 
@@ -297,7 +298,7 @@ class CSVLogger:
 
     def __init__(self,csv_file,flush_freq):
 
-        self.csv_file = csv_file
+        self.csv_file = Path(csv_file)
         self.buffer: list[dict[str, Any]] = []
         self.flush_freq = flush_freq
         self.fieldnames = None
@@ -327,7 +328,8 @@ class CSVLogger:
         if not self.buffer:
             return
 
-        file_exists = os.path.exists(self.csv_file)
+        self.csv_file.parent.mkdir(parents=True, exist_ok=True)
+        file_exists = self.csv_file.exists()
 
         with self.csv_file.open("a", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=self.fieldnames)

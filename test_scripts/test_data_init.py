@@ -50,29 +50,30 @@ if __name__ == '__main__':
     print(f"batch_size: {dataloader.batch_size}")
     print(f"num_workers: {dataloader.num_workers}")
 
+
     dataloader_iter = iter(dataloader)
     num_test_batches = 10
     total_time = 0.0
     batch = None
     start_time = time.perf_counter()
     batch = next(dataloader_iter)
-    cost_time = time.perf_counter() - start_time
-    print(f"{cost_time:.4f} s")
-    start_time = time.perf_counter()
-    batch = next(dataloader_iter)
-    cost_time = time.perf_counter() - start_time
-    print(f"{cost_time:.4f} s")
-
-    for i in range(num_test_batches):
-        start_time = time.perf_counter()
-        batch = next(dataloader_iter)
-        cost_time = time.perf_counter() - start_time
-        total_time += cost_time
-        print(f"batch {i + 1}: {cost_time:.4f} s")
-
-    print(f"avg batch time: {total_time / num_test_batches:.4f} s")
-
-    print("batch keys:", batch.keys())
-    for key, value in batch.items():
-        shape = getattr(value, "shape", None)
-        print(f"{key}: type={type(value)}, shape={shape}")
+    # cost_time = time.perf_counter() - start_time
+    # print(f"{cost_time:.4f} s")
+    # start_time = time.perf_counter()
+    # batch = next(dataloader_iter)
+    # cost_time = time.perf_counter() - start_time
+    # print(f"{cost_time:.4f} s")
+    #
+    # for i in range(num_test_batches):
+    #     start_time = time.perf_counter()
+    #     batch = next(dataloader_iter)
+    #     cost_time = time.perf_counter() - start_time
+    #     total_time += cost_time
+    #     print(f"batch {i + 1}: {cost_time:.4f} s")
+    #
+    # print(f"avg batch time: {total_time / num_test_batches:.4f} s")
+    #
+    # print("batch keys:", batch.keys())
+    # for key, value in batch.items():
+    #     shape = getattr(value, "shape", None)
+    #     print(f"{key}: type={type(value)}, shape={shape}")

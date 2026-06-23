@@ -8,12 +8,11 @@ from os import path as osp
 
 from simplesr.data import build_dataloader, build_dataset
 from simplesr.data.data_sampler import EnlargedSampler
-from simplesr.data.prefetch_dataloader import CPUPrefetcher, CUDAPrefetcher
 from simplesr.models import build_model
 
 from simplesr.utils.options import parse_args,parse_options,opt_dict_to_str,save_yaml
 from simplesr.utils.log_utils import AvgTimer,TrainMessageLogger,get_root_logger,CSVLogger,init_wandb_logger
-from simplesr.utils.distributed_utils import is_main_process,get_world_size,get_rank,master_only
+from simplesr.utils.distributed_utils import master_only
 from simplesr.utils.misc import get_current_time
 
 @master_only
@@ -22,7 +21,7 @@ def make_dirs(opt):
     os.makedirs(path_opt['experiments_root'], exist_ok=True)
     os.makedirs(path_opt['weights'], exist_ok=True)
     os.makedirs(path_opt['checkpoints'], exist_ok=True)
-    #os.makedirs(path_opt['visualization'], exist_ok=True)
+    os.makedirs(path_opt['visualization'], exist_ok=True)
 
 
 def create_train_val_dataloader(opt, logger):
@@ -61,7 +60,7 @@ def create_train_val_dataloader(opt, logger):
         elif phase.split('_')[0] == 'val':
             val_set = build_dataset(dataset_opt)
             val_loader = build_dataloader(
-                val_set, dataset_opt, num_gpu=opt['world_size'], dist=opt['dist'], sampler=None, seed=opt['manual_seed'])
+                val_set, dataset_opt, num_gpu=opt['world_size'], dist=opt['distributed'], sampler=None, seed=opt['manual_seed'])
             logger.info(f'Number of val images/folders in {dataset_opt["name"]}: {len(val_set)}')
             val_loaders.append(val_loader)
         else:
@@ -70,7 +69,7 @@ def create_train_val_dataloader(opt, logger):
     return train_loader, train_sampler, val_loaders, total_epochs, total_iters
 
 def load_checkpoint(cpt_path):
-    pass
+    return torch.load(cpt_path, map_location='cpu', weights_only=False)
 
 
 def train_pipeline():
@@ -105,9 +104,14 @@ def train_pipeline():
     logger = get_root_logger(logger_name='basicsr', log_level=logging.INFO, log_file_path=log_file)
     logger.info("experiment opt:\n"+opt_dict_to_str(opt))
 
+    # csv files
+    csv_flush_freq = opt['log_settings'].get('csv_flush_freq', 10)
+    train_csv_logger = CSVLogger(osp.join(experiments_root, 'train_log.csv'), csv_flush_freq)
+    val_csv_logger = CSVLogger(osp.join(experiments_root, 'val_log.csv'), 1)
+
     # wandb_logger
     # initialize wandb loggers
-    wanbdb_logger=None
+    wandb_logger=None
     wandb_opt=opt["log_settings"].get("wandb")
     # TODO
     exp_opt={
@@ -116,7 +120,7 @@ def train_pipeline():
         "total_iter": opt['train']['total_iter'],
 
     }
-    if wandb_opt and not debug:
+    if wandb_opt and not debug and wandb_opt.get('mode') != 'disabled':
         wandb_logger = init_wandb_logger(
             exp_name=exp_name,
             wandb_opt=wandb_opt,
@@ -124,23 +128,28 @@ def train_pipeline():
             save_dir=experiments_root,
         )
 
+    # create model
+    model=build_model(opt)
+
     # create train and validation dataloaders
     result = create_train_val_dataloader(opt, logger)
     train_loader, train_sampler, val_loaders, total_epochs, total_iters = result
-
-
-    # create model
-    model=build_model(opt)
 
     # train iter
     start_epoch = 1
     current_iter = 0
     # resume
     if resume_train:
-        pass
+        resume_ckpt = opt['path']['resume_ckpt']
+        logger.info(f'Resuming training from checkpoint: {resume_ckpt}')
+        resume_state = load_checkpoint(resume_ckpt)
+        model.resume_checkpoint(resume_state)
+        start_epoch = resume_state['epoch']
+        current_iter = resume_state['iter']
 
     # create message logger (formatted outputs)
-    msg_logger = TrainMessageLogger(opt, current_iter)
+    msg_logger = TrainMessageLogger(opt, current_iter, wandb_logger=wandb_logger)
+
 
     # training
     logger.info(f'Start training from epoch: {start_epoch}, iter: {current_iter}')
@@ -149,6 +158,8 @@ def train_pipeline():
     start_time = time.perf_counter()
 
     for epoch in range(start_epoch,total_epochs+1):
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         for train_data in train_loader:
             data_timer.record()
 
@@ -167,17 +178,26 @@ def train_pipeline():
                 # not work in resume mode
                 msg_logger.reset_start_time()
             # log
-            if current_iter % opt['logger']['print_freq'] == 0:
+            if current_iter % opt['log_settings']['print_freq'] == 0:
                 log_vars = {'epoch': epoch, 'iter': current_iter}
-                log_vars.update({'lrs': model.get_current_learning_rate()})
                 log_vars.update({'time': iter_timer.get_avg_time(), 'data_time': data_timer.get_avg_time()})
-                # 损失
-                log_vars.update(model.get_current_log())
+                # 学习率、损失等训练结果统一放入 results，供 TrainMessageLogger 格式化。
+                results = {'lrs': model.get_current_learning_rate()}
+                results.update(model.get_current_log())
+                log_vars['results'] = results
                 msg_logger(log_vars)
 
-            # save models and training states
-            if current_iter % opt['logger']['save_checkpoint_freq'] == 0:
-                logger.info('Saving models and training states.')
+                train_csv_row = {
+                    'epoch': epoch,
+                    'iter': current_iter,
+                    'lr': model.get_current_learning_rate()[0],
+                }
+                train_csv_row.update(model.get_current_log())
+                train_csv_logger.write(train_csv_row)
+
+            # save checkpoint
+            if current_iter % opt['log_settings']['save_checkpoint_freq'] == 0:
+                logger.info('Saving checkpoint.')
                 model.save(epoch, current_iter)
 
             # validation
@@ -185,7 +205,9 @@ def train_pipeline():
                 if len(val_loaders) > 1:
                     logger.warning('Multiple validation datasets are *only* supported by SRModel.')
                 for val_loader in val_loaders:
-                    model.validation(val_loader, current_iter,, opt['val']['save_img'])
+                    val_results = model.validation(val_loader, current_iter, wandb_logger, opt['val']['save_img'])
+                    if val_results is not None:
+                        val_csv_logger.write({'iter': current_iter, **val_results})
 
             data_timer.start()
             iter_timer.start()
@@ -193,16 +215,19 @@ def train_pipeline():
 
     # end of epoch
 
-    consumed_time = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+    consumed_time = str(datetime.timedelta(seconds=int(time.perf_counter() - start_time)))
     logger.info(f'End of training. Time consumed: {consumed_time}')
     logger.info('Save the latest model.')
     model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
     if opt.get('val') is not None:
         for val_loader in val_loaders:
-            model.validation(val_loader, current_iter, , opt['val']['save_img'])
+            val_results = model.validation(val_loader, current_iter, wandb_logger, opt['val']['save_img'])
+            if val_results is not None:
+                val_csv_logger.write({'iter': current_iter, **val_results})
+
+    train_csv_logger.flush()
+    val_csv_logger.flush()
 
 
 if __name__ == '__main__':
-    root_path = osp.abspath(osp.join(__file__, osp.pardir, osp.pardir))
-    train_pipeline(root_path)
-
+    train_pipeline()

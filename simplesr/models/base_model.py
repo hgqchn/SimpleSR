@@ -19,8 +19,8 @@ class BaseModel():
 
     def __init__(self, opt):
         self.opt = opt
-        self.local_rank=get_local_rank()
-        self.device = torch.device(f'cuda:{self.local_rank}')
+        self.local_rank = get_local_rank()
+        self.device = torch.device(f'cuda:{self.local_rank}' if torch.cuda.is_available() else 'cpu')
         self.is_train = opt['is_train']
         self.schedulers = []
         self.optimizers = []
@@ -28,7 +28,7 @@ class BaseModel():
     def feed_data(self, data):
         pass
 
-    def optimize_parameters(self):
+    def optimize_parameters(self,current_iter):
         pass
 
     def get_current_visuals(self):
@@ -47,10 +47,10 @@ class BaseModel():
             wandb_logger: wandb 日志器。
             save_img (bool): 是否保存验证图像。默认值：False。
         """
-        if self.opt['dist']:
-            self.dist_validation(dataloader, current_iter, wandb_logger, save_img)
+        if self.opt['distributed']:
+            return self.dist_validation(dataloader, current_iter, wandb_logger, save_img)
         else:
-            self.nondist_validation(dataloader, current_iter, wandb_logger, save_img)
+            return self.nondist_validation(dataloader, current_iter, wandb_logger, save_img)
 
     def _initialize_best_metric_results(self, dataset_name):
         """Initialize the best metric results dict for recording the best metric value and iteration."""
@@ -116,11 +116,14 @@ class BaseModel():
         """
         net = net.to(self.device)
         if self.opt['distributed']:
-            net = DistributedDataParallel(
-                net,
-                device_ids=[self.local_rank],
-                output_device=self.local_rank,
-                find_unused_parameters=False)
+            if self.device.type == 'cuda':
+                net = DistributedDataParallel(
+                    net,
+                    device_ids=[self.local_rank],
+                    output_device=self.local_rank,
+                    find_unused_parameters=False)
+            else:
+                net = DistributedDataParallel(net, find_unused_parameters=False)
 
         return net
 
@@ -292,7 +295,7 @@ class BaseModel():
         """
         logger = get_root_logger()
         net = self.get_bare_model(net)
-        load_sd = torch.load(load_path, map_location='cpu')
+        load_sd = torch.load(load_path, map_location='cpu', weights_only=False)
 
         logger.info(f'Loading {net.__class__.__name__} model from {load_path}')
         # # remove unnecessary 'module.'
@@ -386,4 +389,3 @@ class BaseModel():
                 log_dict[name] = value.mean().item()
 
             return log_dict
-

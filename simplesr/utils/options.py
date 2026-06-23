@@ -123,7 +123,8 @@ def parse_options(opt,is_train=True):
     output_dir = opt['output_dir']
     current_time=get_current_time()
 
-    opt['path']={}
+    path_opt = opt.get('path') or {}
+    opt['path'] = dict(path_opt)
     # resume
     resume_ckpt=opt["path"].get("resume_ckpt")
 
@@ -143,7 +144,7 @@ def parse_options(opt,is_train=True):
         opt['path']['experiments_root'] = experiments_root
         opt['path']['weights'] = osp.join(experiments_root, 'weights')
         opt['path']['checkpoints'] = osp.join(experiments_root, 'checkpoints')
-        #opt['path']['visualization'] = osp.join(experiments_root, 'visualization')
+        opt['path']['visualization'] = osp.join(experiments_root, 'visualization')
 
         # change some options for debug mode
         if 'debug' in opt['exp_name']:

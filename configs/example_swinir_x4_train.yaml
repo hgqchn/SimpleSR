@@ -1,5 +1,8 @@
-exp_name: simplesr test
+# SimpleSR SwinIR x4 训练示例配置。
+# 使用方式示例：
+#   python train.py -opt configs/example_swinir_x4_train.yaml
 
+exp_name: swinir_x4_example
 output_dir: D:\codes\SimpleSR\output
 scale: 4
 manual_seed: ~
@@ -9,105 +12,106 @@ model:
   name: ${model_type}
   path: simplesr.models.base_sr_model.SRModel
 
+# 可选路径配置。
+# path:
+#   resume_ckpt: D:\codes\SimpleSR\output\swinir_x4_example\train_xxx\checkpoints\5000.state
+#   pretrain_network_g: D:\codes\SimpleSR\pretrained\SwinIR_x4.pth
+#   experiments_root: D:\codes\SimpleSR\output\swinir_x4_example\custom_train_dir
+
 datasets:
   train:
-    name: test_DOTA
+    name: train_set
     path: simplesr.data.dataset.PairedImageDataset
     kwargs:
-      dataroot_gt: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train\images
-      dataroot_lq: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train_lrx4\images
+      dataroot_gt: D:\path\to\train\HR
+      dataroot_lq: D:\path\to\train\LR_x4
       phase: train
-      use_augment: false
       scale: ${scale}
+      gt_size: 256
+      use_augment: true
       io_backend_opt:
         type: disk
-    # data loader
-    # sampler
     dataset_enlarge_ratio: 1
-    num_worker_per_gpu: 8
-    batch_size_per_gpu: 32
+    batch_size_per_gpu: 8
+    num_worker_per_gpu: 4
     prefetch_mode: cpu
     num_prefetch_queue: 1
+    pin_memory: true
+    persistent_workers: false
 
   val:
-    name: test_DOTA_val
+    name: val_set
     path: simplesr.data.dataset.PairedImageDataset
     kwargs:
-      dataroot_gt: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val\images
-      dataroot_lq: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_lrx4\images
+      dataroot_gt: D:\path\to\val\HR
+      dataroot_lq: D:\path\to\val\LR_x4
       phase: val
+      scale: ${scale}
       use_augment: false
-      scale: 4
       io_backend_opt:
         type: disk
+    batch_size: 4
+    num_worker: 2
+    pin_memory: true
 
-    batch_size: 32
-    num_worker: 8
-
-# network structures
 network_g:
   name: SwinIR
   path: simplesr.networks.SwinIR.SwinIR
   kwargs:
-    upscale: 4
+    upscale: ${scale}
     in_chans: 3
     img_size: 64
     window_size: 8
-    img_range: 1.
+    img_range: 1.0
     depths: [6, 6, 6, 6, 6, 6]
     embed_dim: 180
     num_heads: [6, 6, 6, 6, 6, 6]
     mlp_ratio: 2
-    upsampler: 'pixelshuffle'
-    resi_connection: '1conv'
-
+    upsampler: pixelshuffle
+    resi_connection: 1conv
 
 train:
   ema_decay: 0.999
+  total_iter: 1000000
+  warmup_iter: -1
 
-  total_iter: 1e6
-  warmup_iter: -1  # no warm up
-
-  # losses 像素损失和感知损失
   pixel_opt:
     path: simplesr.losses.basic_loss.L1Loss
     kwargs:
       loss_weight: 1.0
       reduction: mean
-  # 优化器
+
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: 2.0e-4
     weight_decay: 0
     betas: [0.9, 0.99]
 
-  # 学习率调度器
   scheduler:
     type: MultiStepLR
-    milestones: [ 250000, 400000, 450000, 475000 ]
+    milestones: [250000, 400000, 450000, 475000]
     gamma: 0.5
 
 val:
-  val_freq: !!float 5e3
+  val_freq: 5000
   save_img: false
-
+  pbar: true
   metrics:
     psnr:
       type: calculate_psnr
-      crop_border: 4
+      crop_border: ${scale}
       test_y_channel: false
       better: higher
     ssim:
-      type: SSIM
-      crop_border: 4
+      type: calculate_ssim
+      crop_border: ${scale}
+      test_y_channel: false
       better: higher
 
-# logging settings
 log_settings:
   print_freq: 100
   save_checkpoint_freq: 5000
-
   wandb:
-    project: run_exp
+    project: simplesr
     resume_id: ~
     mode: disabled
