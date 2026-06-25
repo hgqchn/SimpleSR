@@ -273,11 +273,11 @@ class SRModel(BaseModel):
             if hasattr(self, 'gt'):
                 del self.gt
 
-            # tentative for out of GPU memory
-            del self.lq
-            del self.output
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            # # tentative for out of GPU memory
+            # del self.lq
+            # del self.output
+            # if torch.cuda.is_available():
+            #     torch.cuda.empty_cache()
         if use_pbar:
             pbar.close()
 

@@ -5,6 +5,7 @@ import time
 import torch
 import os
 from os import path as osp
+from tqdm import tqdm
 
 from simplesr.data import build_dataloader, build_dataset
 from simplesr.data.data_sampler import EnlargedSampler
@@ -12,7 +13,7 @@ from simplesr.models import build_model
 
 from simplesr.utils.options import parse_args,parse_options,opt_dict_to_str,save_yaml
 from simplesr.utils.log_utils import AvgTimer,TrainMessageLogger,get_root_logger,CSVLogger,init_wandb_logger
-from simplesr.utils.distributed_utils import master_only
+from simplesr.utils.distributed_utils import is_main_process, master_only
 from simplesr.utils.misc import get_current_time
 
 @master_only
@@ -72,12 +73,13 @@ def load_checkpoint(cpt_path):
     return torch.load(cpt_path, map_location='cpu', weights_only=False)
 
 
-def train_pipeline():
+def train_pipeline(cmd_args=None):
 
-    opt,args=parse_args()
+    opt,args=parse_args(cmd_args)
     debug=args.debug
     if debug:
-        print("="*10+"调试模式"+"="*10)
+        print("="*20+"调试模式"+"="*20)
+        opt['val']['save_img']=False
 
     # parse options, set distributed setting, set random seed
     opt = parse_options(opt,is_train=True)
@@ -106,19 +108,52 @@ def train_pipeline():
 
     # csv files
     csv_flush_freq = opt['log_settings'].get('csv_flush_freq', 10)
-    train_csv_logger = CSVLogger(osp.join(experiments_root, 'train_log.csv'), csv_flush_freq)
-    val_csv_logger = CSVLogger(osp.join(experiments_root, 'val_log.csv'), 1)
+    train_csv_logger = None if debug else CSVLogger(osp.join(experiments_root, 'train_log.csv'), csv_flush_freq)
+    val_csv_logger = None if debug else CSVLogger(osp.join(experiments_root, 'val_log.csv'), 1)
 
     # wandb_logger
     # initialize wandb loggers
     wandb_logger=None
     wandb_opt=opt["log_settings"].get("wandb")
-    # TODO
-    exp_opt={
-        "exp_name": exp_name,
-        "dataset_name": opt['datasets']['train']['kwargs'].get('name'),
-        "total_iter": opt['train']['total_iter'],
+    train_dataset_opt = opt['datasets']['train']
+    train_kwargs = train_dataset_opt.get('kwargs', {})
+    val_dataset_names = [
+        dataset_opt.get('kwargs', {}).get('name', phase)
+        for phase, dataset_opt in opt['datasets'].items()
+        if phase.split('_')[0] == 'val'
+    ]
+    network_g_opt = opt.get('network_g', {})
+    network_g_kwargs = network_g_opt.get('kwargs', {})
+    train_opt = opt['train']
+    optim_g_opt = train_opt.get('optim_g', {})
+    scheduler_opt = train_opt.get('scheduler', {})
+    pixel_opt = train_opt.get('pixel_opt', {})
+    perceptual_opt = train_opt.get('perceptual_opt', {})
+    val_opt = opt.get('val', {})
 
+    exp_opt = {
+        "exp_name": exp_name,
+        "resume_train": resume_train,
+        "scale": opt.get('scale'),
+        "manual_seed": opt.get('manual_seed'),
+        "distributed": opt.get('distributed'),
+        "train_dataset": train_kwargs.get('name'),
+        "val_datasets": val_dataset_names,
+        "batch_size_per_gpu": train_dataset_opt.get('batch_size_per_gpu'),
+        "num_worker_per_gpu": train_dataset_opt.get('num_worker_per_gpu'),
+        "model": opt.get('model', {}).get('name'),
+        "model_path": opt.get('model', {}).get('path'),
+        "network_g": network_g_opt.get('name'),
+        "network_g_path": network_g_opt.get('path'),
+        "network_g_kwargs": network_g_kwargs,
+        "total_iter": train_opt['total_iter'],
+        "warmup_iter": train_opt.get('warmup_iter', -1),
+        "ema_decay": train_opt.get('ema_decay', 0),
+        "optimizer": optim_g_opt.get('type'),
+        "initial_lr": optim_g_opt.get('lr'),
+        "pixel_loss": pixel_opt.get('path'),
+        "perceptual_loss": perceptual_opt.get('path'),
+        "experiments_root": experiments_root,
     }
     if wandb_opt and not debug and wandb_opt.get('mode') != 'disabled':
         wandb_logger = init_wandb_logger(
@@ -156,11 +191,20 @@ def train_pipeline():
     # 每个iter的数据加载耗时，每个iter的总耗时
     data_timer, iter_timer = AvgTimer(), AvgTimer()
     start_time = time.perf_counter()
+    use_train_pbar = opt['log_settings'].get('train_pbar', True) and is_main_process()
 
     for epoch in range(start_epoch,total_epochs+1):
         if train_sampler is not None:
             train_sampler.set_epoch(epoch)
-        for train_data in train_loader:
+        train_pbar = tqdm(
+            train_loader,
+            total=len(train_loader),
+            desc=f'Epoch {epoch}/{total_epochs}',
+            unit='batch',
+            dynamic_ncols=True,
+            leave=False,
+            disable=not use_train_pbar)
+        for train_data in train_pbar:
             data_timer.record()
 
             current_iter += 1
@@ -173,6 +217,13 @@ def train_pipeline():
             model.feed_data(train_data)
             model.optimize_parameters(current_iter)
             iter_timer.record()
+            if use_train_pbar:
+                train_pbar.set_postfix({
+                    'iter': f'{current_iter}/{total_iters}',
+                    'lr': f'{model.get_current_learning_rate()[0]:.3e}',
+                    'time': f'{iter_timer.get_current_time():.3f}',
+                    'data': f'{data_timer.get_current_time():.3f}',
+                })
             if current_iter == 1:
                 # reset start time in msg_logger for more accurate eta_time
                 # not work in resume mode
@@ -193,20 +244,26 @@ def train_pipeline():
                     'lr': model.get_current_learning_rate()[0],
                 }
                 train_csv_row.update(model.get_current_log())
-                train_csv_logger.write(train_csv_row)
+                if train_csv_logger is not None:
+                    train_csv_logger.write(train_csv_row)
 
             # save checkpoint
             if current_iter % opt['log_settings']['save_checkpoint_freq'] == 0:
                 logger.info('Saving checkpoint.')
-                model.save(epoch, current_iter)
+                if not debug:
+                    saved_path=model.save(epoch, current_iter)
+                    logger.info('Saving checkpoint to {}'.format(saved_path))
+                else:
+                    logger.info("Debug mode")
 
             # validation
             if opt.get('val') is not None and (current_iter % opt['val']['val_freq'] == 0):
+                logger.info(f'[epoch:{epoch:3d}, iter:{current_iter:8,d}] Starting validation.')
                 if len(val_loaders) > 1:
                     logger.warning('Multiple validation datasets are *only* supported by SRModel.')
                 for val_loader in val_loaders:
                     val_results = model.validation(val_loader, current_iter, wandb_logger, opt['val']['save_img'])
-                    if val_results is not None:
+                    if val_csv_logger is not None and val_results is not None:
                         val_csv_logger.write({'iter': current_iter, **val_results})
 
             data_timer.start()
@@ -218,16 +275,23 @@ def train_pipeline():
     consumed_time = str(datetime.timedelta(seconds=int(time.perf_counter() - start_time)))
     logger.info(f'End of training. Time consumed: {consumed_time}')
     logger.info('Save the latest model.')
-    model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
+    if not debug:
+        model.save(epoch=-1, current_iter=total_iters)  # -1 stands for the latest
     if opt.get('val') is not None:
         for val_loader in val_loaders:
-            val_results = model.validation(val_loader, current_iter, wandb_logger, opt['val']['save_img'])
-            if val_results is not None:
-                val_csv_logger.write({'iter': current_iter, **val_results})
+            val_results = model.validation(val_loader, total_iters, wandb_logger, opt['val']['save_img'])
+            if val_csv_logger is not None and val_results is not None:
+                val_csv_logger.write({'iter': total_iters, **val_results})
 
-    train_csv_logger.flush()
-    val_csv_logger.flush()
+    if train_csv_logger is not None:
+        train_csv_logger.flush()
+    if val_csv_logger is not None:
+        val_csv_logger.flush()
 
 
 if __name__ == '__main__':
-    train_pipeline()
+    args_list=[
+        '-opt',r"D:\codes\SimpleSR\configs\test.yaml",
+        #'--debug',
+    ]
+    train_pipeline(args_list)

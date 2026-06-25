@@ -76,7 +76,7 @@ train:
   warmup_iter: -1
 
   pixel_opt:
-    path: simplesr.losses.basic_loss.L1Loss
+    path: simplesr.losses.basic_loss.MSELoss
     kwargs:
       loss_weight: 1.0
       reduction: mean
@@ -111,6 +111,7 @@ val:
 log_settings:
   print_freq: 100
   save_checkpoint_freq: 5000
+  train_pbar: true
   wandb:
     project: simplesr
     resume_id: ~

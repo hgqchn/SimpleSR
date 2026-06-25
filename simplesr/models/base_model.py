@@ -185,7 +185,7 @@ class BaseModel():
 
         logger = get_root_logger()
         logger.info(f'Network: {net_cls_str}, with parameters: {net_params:,d}')
-        logger.info(net_str)
+        #logger.info(net_str)
 
     def _set_lr(self, lr_groups_l):
         """设置 warm-up 阶段的学习率。
@@ -338,6 +338,9 @@ class BaseModel():
             save_path = os.path.join(self.opt['path']['checkpoints'], save_filename)
 
             torch.save(state, save_path)
+            return save_path
+        else:
+            return None
 
 
     def resume_checkpoint(self, resume_state):

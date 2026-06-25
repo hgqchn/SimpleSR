@@ -23,11 +23,13 @@ datasets:
         type: disk
     # data loader
     # sampler
-    dataset_enlarge_ratio: 1
+    dataset_enlarge_ratio: 100
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 32
+    batch_size_per_gpu: 16
     prefetch_mode: cpu
-    num_prefetch_queue: 1
+    num_prefetch_queue: 2
+    pin_memory: true
+    persistent_workers: true
 
   val:
     path: simplesr.data.dataset.PairedImageDataset
@@ -54,9 +56,9 @@ network_g:
     img_size: 64
     window_size: 8
     img_range: 1.
-    depths: [6, 6, 6, 6, 6, 6]
-    embed_dim: 180
-    num_heads: [6, 6, 6, 6, 6, 6]
+    depths: [6, 6, 6, 6]
+    embed_dim: 128
+    num_heads: [4, 4, 4, 4]
     mlp_ratio: 2
     upsampler: 'pixelshuffle'
     resi_connection: '1conv'
@@ -65,7 +67,7 @@ network_g:
 train:
   ema_decay: 0.999
 
-  total_iter: 1e6
+  total_iter: 1e5
   warmup_iter: -1  # no warm up
 
   # losses 像素损失和感知损失
@@ -106,8 +108,9 @@ val:
 log_settings:
   print_freq: 100
   save_checkpoint_freq: 5000
+  train_pbar: true
 
   wandb:
     project: run_exp
     resume_id: ~
-    mode: disabled
+    mode: online
