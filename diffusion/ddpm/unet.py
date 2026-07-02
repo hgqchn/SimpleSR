@@ -271,7 +271,7 @@ class UNetModel(nn.Module):
                 if ds in self.attention_resolutions:
                     layers.append(
                         AttentionBlock(
-                            ch,
+                            channels=ch,
                             num_heads=self.num_heads,
                         )
                 )
@@ -309,7 +309,7 @@ class UNetModel(nn.Module):
                 use_scale_shift_norm=self.use_scale_shift_norm,
             ),
             AttentionBlock(
-                ch,
+                channels=ch,
                 num_heads=self.num_heads,
             ),
             ResBlock(
@@ -339,7 +339,7 @@ class UNetModel(nn.Module):
                 if ds in self.attention_resolutions:
                     layers.append(
                         AttentionBlock(
-                            ch,
+                            channels=ch,
                             num_heads=self.num_heads,
                         )
                     )
@@ -403,13 +403,16 @@ class SuperResModel(UNetModel):
     """
     A UNetModel that performs super-resolution.
 
-    Expects an extra kwarg `low_res` to condition on a low-resolution image.
+    Expects `lq` or `low_res` to condition on a low-resolution image.
     """
 
     def __init__(self, image_size, in_channels, *args, **kwargs):
         super().__init__(image_size, in_channels * 2, *args, **kwargs)
 
-    def forward(self, x, timesteps, low_res=None, **kwargs):
+    def forward(self, x, timesteps, lq=None, low_res=None, **kwargs):
+        low_res = lq if lq is not None else low_res
+        if low_res is None:
+            raise ValueError("SuperResModel.forward requires lq or low_res.")
         _, _, new_height, new_width = x.shape
         upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear",align_corners=False)
         x = torch.cat([x, upsampled], dim=1)

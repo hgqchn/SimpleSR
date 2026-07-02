@@ -88,7 +88,7 @@ def _warmup_beta(linear_start, linear_end, n_timestep, warmup_frac):
     return betas
 
 
-def make_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
+def get_named_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
     if schedule == 'quad':
         betas = np.linspace(linear_start ** 0.5, linear_end ** 0.5,
                             n_timestep, dtype=np.float64) ** 2

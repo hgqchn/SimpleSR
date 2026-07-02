@@ -1,3 +1,117 @@
+# DDPM + UNet x4 super-resolution baseline.
 
- 本配置文件用于 DDPM + UNet x4 扩散超分实验。
+exp_name: ddpm_unet_x4
 
+output_dir: D:\codes\SimpleSR\output
+scale: 4
+manual_seed: 0
+
+model:
+  name: DiffusionSRModel
+  path: diffusion.ddpm.diffusion_sr_model.DiffusionSRModel
+
+datasets:
+  train:
+    path: simplesr.data.dataset.PairedImageDataset
+    kwargs:
+      name: dota_train
+      dataroot_gt: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train\images
+      dataroot_lq: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\train_lrx4\images
+      phase: train
+      scale: ${scale}
+      gt_size: 64
+      use_augment: true
+      io_backend_opt:
+        type: disk
+    dataset_enlarge_ratio: 100
+    batch_size_per_gpu: 1
+    num_worker_per_gpu: 0
+    pin_memory: true
+    persistent_workers: false
+
+  val:
+    path: simplesr.data.dataset.PairedImageDataset
+    kwargs:
+      name: dota_val
+      dataroot_gt: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val\images
+      dataroot_lq: D:\codes\SimpleSR\dataset\DOTA_crop_dataset\dota_samples\val_lrx4\images
+      phase: val
+      scale: ${scale}
+      io_backend_opt:
+        type: disk
+    batch_size: 1
+    num_worker: 0
+    pin_memory: true
+    persistent_workers: false
+
+network_g:
+  name: DDPM-SR-UNet
+  path: diffusion.ddpm.unet.SuperResModel
+  kwargs:
+    image_size: 64
+    in_channels: 3
+    model_channels: 32
+    out_channels: 3
+    num_res_blocks: 1
+    attention_resolutions: [16]
+    channel_mult: [1, 2]
+    dropout: 0.0
+    num_heads: 4
+
+diffusion:
+  train:
+    name: GaussianDiffusionSR
+    path: diffusion.ddpm.gaussian_diffusion.GaussianDiffusionSR
+    schedule_sampler: uniform
+    kwargs:
+      diffusion_steps: 1000
+      noise_schedule: linear
+      objective: pred_noise
+      scale: ${scale}
+  val:
+    name: SpacedDiffusionSR
+    path: diffusion.ddpm.respace.SpacedDiffusionSR
+    sampler: ddim
+    kwargs:
+      diffusion_steps: 1000
+      noise_schedule: linear
+      timestep_respacing: ddim10
+      objective: pred_noise
+      scale: ${scale}
+
+train:
+  ema_decay: 0.999
+  total_iter: 100000
+  warmup_iter: -1
+  optim_g:
+    type: AdamW
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+  scheduler:
+    type: MultiStepLR
+    milestones: [50000, 80000]
+    gamma: 0.5
+
+val:
+  val_freq: 5000
+  save_img: false
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 4
+      test_y_channel: false
+      better: higher
+    ssim:
+      type: SSIM
+      crop_border: 4
+      better: higher
+
+log_settings:
+  print_freq: 100
+  save_checkpoint_freq: 5000
+  train_pbar: true
+  wandb:
+    project: run_exp
+    resume_id: ~
+    mode: disabled

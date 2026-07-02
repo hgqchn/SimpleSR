@@ -9,7 +9,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .gaussian_diffusion import GaussianDiffusion, GaussianDiffusionSR, get_named_beta_schedule
+from diffusion.common_utils import get_named_beta_schedule
+from .gaussian_diffusion import GaussianDiffusion, GaussianDiffusionSR
 
 
 def space_timesteps(num_timesteps: int, section_counts) -> set[int]:
@@ -120,9 +121,8 @@ class SpacedDiffusionSR(GaussianDiffusionSR):
         super().__init__(betas=np.array(new_betas, dtype=np.float64), **kwargs)
 
     def call_model(self, model, x_t, t, **model_kwargs):
-        lq = model_kwargs.pop("lq")
         mapped_t = self.map_timesteps(t)
-        return model(x_t, mapped_t, lq=lq, **model_kwargs)
+        return model(x_t, mapped_t, **model_kwargs)
 
     def map_timesteps(self, t: torch.Tensor) -> torch.Tensor:
         mapping = torch.tensor(self.timestep_map, device=t.device, dtype=t.dtype)

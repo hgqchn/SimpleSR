@@ -20,7 +20,8 @@ guided-diffusion 官方超分采样脚本中常见配置：
 
 from __future__ import annotations
 
-from .gaussian_diffusion import GaussianDiffusionSR, get_named_beta_schedule
+from diffusion.common_utils import get_named_beta_schedule
+from .gaussian_diffusion import GaussianDiffusionSR
 from .respace import SpacedDiffusionSR, space_timesteps
 from .unet import SuperResModel
 
@@ -48,7 +49,6 @@ def diffusion_defaults() -> dict:
         "noise_schedule": "linear",
         "timestep_respacing": "",
         "objective": "pred_noise",
-        "clip_denoised": True,
     }
 
 
@@ -85,7 +85,6 @@ def create_sr_diffusion(
     noise_schedule: str = "linear",
     timestep_respacing="",
     objective: str = "pred_noise",
-    clip_denoised: bool = True,
     scale: int = 4,
 ):
     """创建超分 DDPM diffusion。
@@ -97,7 +96,6 @@ def create_sr_diffusion(
     kwargs = {
         "betas": betas,
         "objective": objective,
-        "clip_denoised": clip_denoised,
         "scale": scale,
     }
     if timestep_respacing:

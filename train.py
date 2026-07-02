@@ -288,6 +288,8 @@ def train_pipeline(cmd_args=None):
     if val_csv_logger is not None:
         val_csv_logger.flush()
 
+    if wandb_logger is not None:
+        wandb_logger.finish()
 
 if __name__ == '__main__':
     args_list=[
